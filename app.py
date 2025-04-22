@@ -899,8 +899,8 @@ def main():
         st.subheader("Período de Análise")
         # Usar um seletor de data por rota para flexibilidade na comparação de períodos diferentes
         # Usar session_state para persistir as dates
-        today = datetime.date.today()
-        week_ago = today - datetime.timedelta(days=7)
+        today = datetime.today().date()        # 2025-04-22 (objeto date)
+        week_ago = today - timedelta(days=7)  # 2025-04-15 (objeto date)
 
         col_date1, col_date2 = st.columns(2)
         with col_date1:
