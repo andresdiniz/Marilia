@@ -796,18 +796,25 @@ def analyze_current_vs_historical(metadata_df):
     Analisa dados atuais vs históricos com tratamento de erros numéricos
     """
     try:
+        logging.info("Iniciando analyze_current_vs_historical")
+        logging.info(f"Tipo de metadata_df: {type(metadata_df)}")
+        if isinstance(metadata_df, pd.DataFrame):
+            logging.info(f"Colunas de metadata_df: {metadata_df.columns}")
+        else:
+            logging.warning("metadata_df não é um DataFrame")
+
         df = metadata_df.copy()
-        
+
         # Substituir zeros para evitar divisão por zero
         df['historic_time'] = df['historic_time'].replace(0, 1)
         df['historic_speed'] = df['historic_speed'].replace(0, 1)
-        
+
         # Cálculo seguro das variações
-        df['var_time'] = ((df['avg_time'] - df['historic_time']) / 
-                         df['historic_time']).fillna(0) * 100
-        df['var_speed'] = ((df['avg_speed'] - df['historic_speed']) / 
-                          df['historic_speed']).fillna(0) * 100
-        
+        df['var_time'] = ((df['avg_time'] - df['historic_time']) /
+                           df['historic_time']).fillna(0) * 100
+        df['var_speed'] = ((df['avg_speed'] - df['historic_speed']) /
+                         df['historic_speed']).fillna(0) * 100
+
         # Classificação de status
         conditions = [
             (df['var_time'] > 15) | (df['var_speed'] < -15),
@@ -815,13 +822,14 @@ def analyze_current_vs_historical(metadata_df):
         ]
         choices = ['Crítico', 'Atenção']
         df['status'] = np.select(conditions, choices, default='Normal')
-        
-        return df.sort_values('var_time', ascending=False)
-        
-    except Exception as e:
-        logging.error(f"Falha na análise: {e}", exc_info=True)
-        return pd.DataFrame()
 
+        logging.info("Análise concluída com sucesso")
+        return df
+
+    except Exception as e:
+        logging.error(f"Erro na análise de dados históricos vs atuais: {e}", exc_info=True)
+        st.error(f"Erro ao analisar dados históricos vs atuais: {e}")
+        return pd.DataFrame()
 
 # --- Função Principal do Aplicativo Streamlit ---
 
