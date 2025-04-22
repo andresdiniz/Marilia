@@ -245,6 +245,7 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 # database = "u335174317_wazeportal"
 
 @st.cache_resource # Cache a conexão com o banco de dados para melhorar o desempenho
+@st.cache_resource
 def get_db_connection():
     """
     Estabelece e retorna uma conexão com o banco de dados MySQL.
@@ -257,6 +258,7 @@ def get_db_connection():
             password=st.secrets["mysql"]["password"],
             database=st.secrets["mysql"]["database"]
         )
+        logging.info("Conexão com o banco de dados estabelecida com sucesso.")
         return conn
     except Exception as e:
         logging.exception("Erro ao conectar ao banco de dados:")
