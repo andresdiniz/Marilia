@@ -244,6 +244,9 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 # password = "@Ndre2025." # Mude isso para sua senha real ou use secrets
 # database = "u335174317_wazeportal"
 
+@st.cache_resource # Cache a conexão com o banco de dados para melhorar o desempenho
+# O cache_resource é usado para armazenar a conexão com o banco de dados
+# e evitar a criação de novas conexões a cada chamada de função.
 def get_db_connection():
     """
     Estabelece e retorna uma conexão com o banco de dados MySQL.
@@ -263,6 +266,7 @@ def get_db_connection():
         st.error(f"Erro ao conectar ao banco de dados: {e}")
         st.stop() # Parar a execução se não conseguir conectar
 
+@st.cache_data(ttl=300) # Cache das coordenadas por 1 hora (3600 segundos)
 def get_data(start_date=None, end_date=None, route_name=None):
     """
     Busca dados históricos de velocidade com tratamento de palavras reservadas
@@ -340,6 +344,7 @@ def get_data(start_date=None, end_date=None, route_name=None):
         except Exception as e:
             logging.error(f"Erro ao fechar conexão: {str(e)}")
 
+@st.cache_data(ttl=3600) # Cache das coordenadas por 1 hora (3600 segundos)
 def get_all_route_names():
     """
     Busca todos os nomes de rotas distintos no banco de dados.
@@ -366,6 +371,7 @@ def get_all_route_names():
             mycursor.close()
         # Não feche a conexão 'mydb' aqui, pois ela é gerenciada por st.cache_resource
 
+@st.cache_data(ttl=3600) # Cache das coordenadas por 1 hora (3600 segundos)
 def get_route_coordinates(route_id):
     """
     Busca as coordenadas geográficas (linha) para uma rota específica.
@@ -745,6 +751,7 @@ def gerar_insights(df):
 
     return "\n\n".join(insights)
 
+@st.cache_data(ttl=300) # Cache das coordenadas por 1 hora (3600 segundos)
 def get_route_metadata():
     """
     Busca metadados das rotas ativas com tratamento robusto de erros
