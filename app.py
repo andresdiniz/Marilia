@@ -248,45 +248,43 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 
 @st.cache_resource # ESSENCIAL: Cache a conexão do banco de dados
 def get_db_connection():
-    """
+    """
     Estabelece e retorna uma conexão com o banco de dados MySQL.
     A conexão é cacheada pelo Streamlit usando @st.cache_resource.
     """
-    logging.info("Tentando estabelecer conexão com o banco de dados (via cache_resource).")
-    try:
-        conn = mysql.connector.connect(
-            host=st.secrets["mysql"]["host"],
-            user=st.secrets["mysql"]["user"],
-            password=st.secrets["mysql"]["password"],
-            database=st.secrets["mysql"]["database"]
+    logging.info("Tentando estabelecer conexão com o banco de dados (via cache_resource).")
+    try:
+        conn = mysql.connector.connect(
+            host=st.secrets["mysql"]["host"],
+            user=st.secrets["mysql"]["user"],
+            password=st.secrets["mysql"]["password"],
+            database=st.secrets["mysql"]["database"]
         )
-        # O Streamlit fechará a conexão automaticamente quando o recurso cacheado for invalidado
-        logging.info("Conexão com o banco de dados estabelecida/reutilizada com sucesso.")
-        return conn
-    except Exception as e:
-        logging.exception("Erro ao conectar ao banco de dados:")
-        st.error(f"Erro ao conectar ao banco de dados: {e}")
-        st.stop()
-
+        # O Streamlit fechará a conexão automaticamente quando o recurso cacheado for invalidado
+        logging.info("Conexão com o banco de dados estabelecida/reutilizada com sucesso.")
+        return conn
+    except Exception as e:
+        logging.exception("Erro ao conectar ao banco de dados:")
+        st.error(f"Erro ao conectar ao banco de dados: {e}")
+        st.stop()
 
 @st.cache_resource # Cache o engine SQLAlchemy
 def get_cached_sqlalchemy_engine():
-    """
+    """
     Cria e retorna um engine SQLAlchemy cacheado.
     """
-    logging.info("Tentando criar/reutilizar engine SQLAlchemy (via cache_resource).")
-    try:
-        engine = create_engine(
-            f'mysql+mysqlconnector://{st.secrets["mysql"]["user"]}:{st.secrets["mysql"]["password"]}@{st.secrets["mysql"]["host"]}/{st.secrets["mysql"]["database"]}'
+    logging.info("Tentando criar/reutilizar engine SQLAlchemy (via cache_resource).")
+    try:
+        engine = create_engine(
+            f'mysql+mysqlconnector://{st.secrets["mysql"]["user"]}:{st.secrets["mysql"]["password"]}@{st.secrets["mysql"]["host"]}/{st.secrets["mysql"]["database"]}'
         )
-        logging.info("Engine SQLAlchemy criada/reutilizada com sucesso.")
-        return engine
-    except Exception as e:
-        logging.exception("Erro ao criar engine SQLAlchemy:")
-        st.error(f"Erro ao criar engine SQLAlchemy: {e}")
-        # Dependendo do uso, talvez não precise parar a aplicação aqui, mas logar e retornar None
-        return None # Retorna None ou lança exceção
-
+        logging.info("Engine SQLAlchemy criada/reutilizada com sucesso.")
+        return engine
+    except Exception as e:
+        logging.exception("Erro ao criar engine SQLAlchemy:")
+        st.error(f"Erro ao criar engine SQLAlchemy: {e}")
+        # Dependendo do uso, talvez não precise parar a aplicação aqui, mas logar e retornar None
+        return None # Retorna None ou lança exceção
 
 # @st.cache_data(ttl=600) # Opcional: Cache os resultados da consulta por 10 minutos
 def get_data(start_date=None, end_date=None, route_name=None):
