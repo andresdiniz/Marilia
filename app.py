@@ -245,15 +245,12 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 # database = "u335174317_wazeportal"
 
 @st.cache_resource # Cache a conexão com o banco de dados para melhorar o desempenho
-# O cache_resource é usado para armazenar a conexão com o banco de dados
-# e evitar a criação de novas conexões a cada chamada de função.
 def get_db_connection():
     """
     Estabelece e retorna uma conexão com o banco de dados MySQL.
     A conexão é cacheada pelo Streamlit.
     """
     try:
-        # Configuração de pooling ou outras otimizações podem ser adicionadas aqui
         conn = mysql.connector.connect(
             host=st.secrets["mysql"]["host"],
             user=st.secrets["mysql"]["user"],
@@ -262,75 +259,56 @@ def get_db_connection():
         )
         return conn
     except Exception as e:
-        logging.exception("Erro ao conectar ao banco de dados:") # Log detalhado
+        logging.exception("Erro ao conectar ao banco de dados:")
         st.error(f"Erro ao conectar ao banco de dados: {e}")
-        st.stop() # Parar a execução se não conseguir conectar
+        st.stop()
 
-@st.cache_data(ttl=300) # Cache das coordenadas por 1 hora (3600 segundos)
+@st.cache_data(ttl=300) # Cache dos dados por 5 minutos (300 segundos)
 def get_data(start_date=None, end_date=None, route_name=None):
     """
-    Busca dados históricos de velocidade com tratamento de palavras reservadas
+    Busca dados históricos de velocidade com tratamento de palavras reservadas e cache.
     """
     mydb = None
     mycursor = None
     try:
         mydb = get_db_connection()
         mycursor = mydb.cursor()
-
-        # Query base com proteção contra palavras reservadas
         query = """
-            SELECT 
-                hr.route_id, 
-                r.name AS route_name, 
+            SELECT
+                hr.route_id,
+                r.name AS route_name,
                 hr.`data` AS data,
                 hr.velocidade
             FROM historic_routes hr
-            INNER JOIN routes r 
-                ON hr.route_id = r.id 
-                AND r.id_parceiro = 103 
-            WHERE 1=1  -- Facilitador de condições
+            INNER JOIN routes r
+                ON hr.route_id = r.id
+                AND r.id_parceiro = 103
+            WHERE 1=1
         """
-
         conditions = []
         params = []
-
-        # Filtros dinâmicos
         if route_name:
             conditions.append("r.name = %s")
             params.append(route_name)
-            
         if start_date:
             conditions.append("hr.`data` >= %s")
             params.append(start_date)
-            
         if end_date:
-            # Ajuste para incluir todo o último dia
             end_date_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
             end_date_plus_one = end_date_dt.strftime("%Y-%m-%d")
             conditions.append("hr.`data` < %s")
             params.append(end_date_plus_one)
-
-        # Montagem final da query
         if conditions:
             query += " AND " + " AND ".join(conditions)
-            
-        query += " ORDER BY hr.`data` ASC" # Ordenar por data crescente
-
-        # Execução
+        query += " ORDER BY hr.`data` ASC"
         mycursor.execute(query, params)
         results = mycursor.fetchall()
-        
-        # Converter para DataFrame
         col_names = [i[0] for i in mycursor.description]
         df = pd.DataFrame(results, columns=col_names)
-
-        # Converter tipos de dados
         if not df.empty:
             df['data'] = pd.to_datetime(df['data']).dt.tz_localize(None)
             df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
-
         return df, None
-
     except mysql.connector.Error as err:
         logging.error(f"Erro MySQL [{err.errno}]: {err.msg}")
         return pd.DataFrame(), str(err)
@@ -340,48 +318,37 @@ def get_data(start_date=None, end_date=None, route_name=None):
     finally:
         try:
             if mycursor: mycursor.close()
-            if mydb: mydb.close()
+            # Não feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
         except Exception as e:
-            logging.error(f"Erro ao fechar conexão: {str(e)}")
+            logging.error(f"Erro ao fechar cursor: {str(e)}")
 
-@st.cache_data(ttl=3600) # Cache das coordenadas por 1 hora (3600 segundos)
+@st.cache_data(ttl=3600) # Cache dos nomes das rotas por 1 hora (3600 segundos)
 def get_all_route_names():
     """
-    Busca todos os nomes de rotas distintos no banco de dados.
-    A lista de nomes é cacheada pelo Streamlit.
-
-    Returns:
-        list[str]: Lista de nomes de rotas.
+    Busca todos os nomes de rotas distintos no banco de dados e os cacheia.
     """
     mydb = None
     mycursor = None
     try:
         mydb = get_db_connection()
         mycursor = mydb.cursor()
-        query = "SELECT DISTINCT name FROM routes WHERE id_parceiro = 103" # Condição adicionada
+        query = "SELECT DISTINCT name FROM routes WHERE id_parceiro = 103"
         mycursor.execute(query)
         results = mycursor.fetchall()
         return [row[0] for row in results]
     except Exception as e:
-        logging.exception("Erro ao obter nomes das rotas:") # Log detalhado
+        logging.exception("Erro ao obter nomes das rotas:")
         st.error(f"Erro ao obter nomes das rotas: {e}")
         return []
     finally:
         if mycursor:
             mycursor.close()
-        # Não feche a conexão 'mydb' aqui, pois ela é gerenciada por st.cache_resource
+        # Não feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
 
 @st.cache_data(ttl=3600) # Cache das coordenadas por 1 hora (3600 segundos)
 def get_route_coordinates(route_id):
     """
-    Busca as coordenadas geográficas (linha) para uma rota específica.
-    As coordenadas são cacheadas pelo Streamlit.
-
-    Args:
-        route_id (int): ID da rota.
-
-    Returns:
-        pd.DataFrame: DataFrame com colunas 'longitude' e 'latitude'.
+    Busca as coordenadas geográficas para uma rota específica e as cacheia.
     """
     mydb = None
     mycursor = None
@@ -389,24 +356,25 @@ def get_route_coordinates(route_id):
         mydb = get_db_connection()
         mycursor = mydb.cursor()
         query = """
-        SELECT rl.x, rl.y 
+        SELECT rl.x, rl.y
         FROM route_lines rl
         JOIN routes r ON rl.route_id = r.id
-        WHERE rl.route_id = %s 
-        AND r.id_parceiro = 103  -- Condição adicionada
+        WHERE rl.route_id = %s
+        AND r.id_parceiro = 103
         ORDER BY rl.id"""
         mycursor.execute(query, (route_id,))
         results = mycursor.fetchall()
         df = pd.DataFrame(results, columns=['longitude', 'latitude'])
         return df
     except Exception as e:
-        logging.exception(f"Erro ao obter coordenadas para route_id {route_id}:") # Log detalhado
+        logging.exception(f"Erro ao obter coordenadas para route_id {route_id}:")
         st.error(f"Erro ao obter coordenadas: {e}")
         return pd.DataFrame()
     finally:
         if mycursor:
             mycursor.close()
-        # Não feche a conexão 'mydb' aqui, pois ela é gerenciada por st.cache_resource
+        # Não feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+
 
 # --- Funções de Processamento e Análise ---
 
