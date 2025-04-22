@@ -832,6 +832,25 @@ def analyze_current_vs_historical(metadata_df):
         logging.error(f"Erro na análise de dados históricos vs atuais: {e}", exc_info=True)
         st.error(f"Erro ao analisar dados históricos vs atuais: {e}")
         return pd.DataFrame()
+    
+# Nova função para detalhes completos das conexões
+def get_db_connections_details():
+    """
+    Lista todas as conexões ativas com detalhes
+    """
+    try:
+        conn = get_db_connection()
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute("""
+                SELECT 
+                    id, user, host, db, command, time, state, info
+                FROM information_schema.processlist
+                WHERE db = %s
+            """, (st.secrets["mysql"]["database"],))
+            return cursor.fetchall()
+    except Exception as e:
+        logging.error(f"Erro ao listar conexões: {e}")
+        return []
 
 # --- Função Principal do Aplicativo Streamlit ---
 
@@ -1460,6 +1479,28 @@ def main():
     # Mensagem final caso nenhuma rota tenha dados
     if not routes_info or all(info['data'].empty for info in routes_info.values()):
          st.info("Nenhuma análise exibida. Selecione rotas com dados disponíveis.")
+    
+    # Em qualquer seção do seu código:
+    with st.expander("🔍 Detalhes das Conexões Ativas"):
+        connections = get_db_connections_details()
+        if connections:
+            st.dataframe(
+                pd.DataFrame(connections),
+                column_config={
+                    "time": st.column_config.ProgressColumn(
+                        "Tempo (s)",
+                        format="%ds",
+                        min_value=0,
+                        max_value=3600
+                    )
+                },
+                hide_index=True
+            )
+        else:
+            st.info("Nenhuma conexão ativa encontrada")
+    
+    # Adicione no final da função main()
+    logging.info(f"Conexões ativas ao finalizar: {get_db_connections_count()}")
 
 
 # --- Executa o aplicativo Streamlit ---
