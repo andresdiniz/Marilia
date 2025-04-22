@@ -1474,15 +1474,6 @@ def main():
     # Mensagem final caso nenhuma rota tenha dados
     if not routes_info or all(info['data'].empty for info in routes_info.values()):
          st.info("Nenhuma análise exibida. Selecione rotas com dados disponíveis.")
-    
-    with st.sidebar.expander("🔍 Monitor do Banco"):
-        stats = get_db_stats()
-        st.metric("Conexões Disponíveis", stats["available_connections"])
-        st.metric("Conexões em Uso", stats["in_use"])
-        st.metric("Tamanho do Pool", stats["pool_size"])
-        
-        if st.button("Atualizar Status"):
-            st.rerun()
 
 # --- Executa o aplicativo Streamlit ---
 if __name__ == "__main__":
