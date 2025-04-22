@@ -247,13 +247,34 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 # user = "u335174317_wazeportal"
 # password = "@Ndre2025." # Mude isso para sua senha real ou use secrets
 # database = "u335174317_wazeportal"
-import mysql.connector
-from mysql.connector import pooling
-import streamlit as st
-import logging
-import pandas as pd
-from sqlalchemy import create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+
+
+def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Processa o dataframe após busca no banco de dados:
+    - Converte coluna de data
+    - Converte velocidade para numérico
+    - Remove registros inválidos
+    """
+    try:
+        if not df.empty:
+            # Converter coluna de data
+            df['data'] = pd.to_datetime(df['data'], errors='coerce', utc=True).dt.tz_localize(None)
+            
+            # Converter velocidade para numérico
+            df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
+            
+            # Remover registros com dados inválidos
+            df = df.dropna(subset=['data', 'velocidade']).copy()
+            
+            # Ordenar por data
+            df.sort_values('data', inplace=True)
+            
+        return df
+    
+    except Exception as e:
+        logging.error(f"Erro no processamento do dataframe: {str(e)}")
+        return pd.DataFrame()
 
 # Configurar pooling de conexões global
 @st.cache_resource
@@ -306,33 +327,6 @@ def get_db_connection():
         logging.exception("Erro ao obter conexão do pool:")
         st.error(f"Erro ao conectar ao banco: {e}")
         st.stop()
-
-def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Processa o dataframe após busca no banco de dados:
-    - Converte coluna de data
-    - Converte velocidade para numérico
-    - Remove registros inválidos
-    """
-    try:
-        if not df.empty:
-            # Converter coluna de data
-            df['data'] = pd.to_datetime(df['data'], errors='coerce', utc=True).dt.tz_localize(None)
-            
-            # Converter velocidade para numérico
-            df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
-            
-            # Remover registros com dados inválidos
-            df = df.dropna(subset=['data', 'velocidade']).copy()
-            
-            # Ordenar por data
-            df.sort_values('data', inplace=True)
-            
-        return df
-    
-    except Exception as e:
-        logging.error(f"Erro no processamento do dataframe: {str(e)}")
-        return pd.DataFrame()
 
 # Funções de acesso ao banco otimizadas
 @st.cache_data(ttl=600, show_spinner="Buscando dados históricos...")
