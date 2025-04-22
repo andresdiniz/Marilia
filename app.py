@@ -30,7 +30,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta
 
-
+logging.basicConfig(level=logging.INFO)
 
 # Configurações de compatibilidade do numpy (manter se for necessário no seu ambiente)
 # Isso pode não ser necessário dependendo da versão do numpy, mas é seguro manter
