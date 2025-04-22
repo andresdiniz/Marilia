@@ -487,14 +487,22 @@ def process_metadata(df):
     }
     return df.astype(conversions, errors='ignore').dropna()
 
+# Substitua a função get_db_stats() por esta versão corrigida
 def get_db_stats():
-    """Retorna estatísticas do pool de conexões"""
-    pool = setup_database_pool()
-    return {
-        "pool_size": pool.pool_size,
-        "available_connections": len(pool._cnx_queue),
-        "in_use": pool._cnx_queue.maxsize - len(pool._cnx_queue)
-    }
+    """Retorna estatísticas seguras do pool de conexões"""
+    try:
+        pool = setup_database_pool()
+        
+        return {
+            "pool_size": pool._pool_size,  # Acesso ao tamanho configurado do pool
+            "active_connections": pool._configpool._active_connections  # Acesso interno (não recomendado)
+        }
+    except Exception as e:
+        logging.error(f"Erro ao obter estatísticas: {str(e)}")
+        return {
+            "pool_size": "N/A",
+            "active_connections": "N/A"
+        }
 
 # --- Funções de Processamento e Análise ---
 
