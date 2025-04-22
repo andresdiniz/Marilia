@@ -28,6 +28,8 @@ import holidays # Importar a biblioteca holidays para feriados
 import time # Importar time para manipulação de tempo
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime, timedelta
+
 
 
 # Configurações de compatibilidade do numpy (manter se for necessário no seu ambiente)
@@ -308,12 +310,12 @@ def get_db_connection():
 # Funções de acesso ao banco otimizadas
 @st.cache_data(ttl=600, show_spinner="Buscando dados históricos...")
 def get_data(start_date=None, end_date=None, route_name=None):
-    """Busca dados históricos usando pool de conexões"""
-    conn = None
+    """Busca dados históricos com tratamento robusto de datas"""
     try:
+        query, params = build_query(start_date, end_date, route_name)
+        
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            query, params = build_query(start_date, end_date, route_name)
             cursor.execute(query, params)
             
             df = pd.DataFrame(
@@ -329,12 +331,15 @@ def get_data(start_date=None, end_date=None, route_name=None):
     except mysql.connector.Error as err:
         logging.error(f"Erro MySQL [{err.errno}]: {err.msg}")
         return pd.DataFrame(), str(err)
+    except Exception as e:
+        logging.error(f"Erro geral: {str(e)}")
+        return pd.DataFrame(), str(e)
     finally:
         if conn and conn.is_connected():
             conn.close()
 
 def build_query(start_date, end_date, route_name):
-    """Constrói a query SQL dinamicamente"""
+    """Constrói a query SQL dinamicamente com tratamento correto de datas"""
     query = """
         SELECT hr.route_id, r.name AS route_name, hr.data, hr.velocidade
         FROM historic_routes hr
@@ -343,28 +348,37 @@ def build_query(start_date, end_date, route_name):
     """
     params = []
     
+    # Converter datas para objetos datetime
+    start_date_obj = None
+    end_date_obj = None
+    
+    if start_date:
+        if isinstance(start_date, str):
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+        else:  # Assume que é datetime.date
+            start_date_obj = datetime.combine(start_date, datetime.min.time())
+        
+        query += " AND hr.data >= %s"
+        params.append(start_date_obj.strftime("%Y-%m-%d %H:%M:%S"))
+
+    if end_date:
+        if isinstance(end_date, str):
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+        else:  # Assume que é datetime.date
+            end_date_obj = datetime.combine(end_date, datetime.min.time())
+        
+        # Adiciona 1 dia e converte para timestamp
+        end_date_obj += timedelta(days=1)
+        query += " AND hr.data < %s"
+        params.append(end_date_obj.strftime("%Y-%m-%d %H:%M:%S"))
+
     if route_name:
         query += " AND r.name = %s"
         params.append(route_name)
-        
-    if start_date:
-        query += " AND hr.data >= %s"
-        params.append(start_date)
-        
-    if end_date:
-        end_date += datetime.timedelta(days=1)
-        query += " AND hr.data < %s"
-        params.append(end_date.strftime("%Y-%m-%d"))
     
     query += " ORDER BY hr.data ASC"
+    
     return query, params
-
-def process_dataframe(df):
-    """Processa o dataframe após busca no banco"""
-    df['data'] = pd.to_datetime(df['data'], errors='coerce').dt.tz_localize(None)
-    df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
-    df.dropna(subset=['data', 'velocidade'], inplace=True)
-    return df
 
 @st.cache_data(ttl=3600)
 def get_all_route_names():
