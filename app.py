@@ -719,7 +719,7 @@ def gerar_insights(df):
 
     return "\n\n".join(insights)
 
-@st.cache_data(ttl=300) # Cache das coordenadas por 1 hora (3600 segundos)
+@st.cache_data(ttl=300) # Cache dos dados por 5 minutos (300 segundos)
 def get_route_metadata():
     """
     Busca metadados das rotas ativas com tratamento robusto de erros
@@ -730,18 +730,18 @@ def get_route_metadata():
     mycursor = None
     try:
         logging.info("Iniciando busca de metadados...")
-        
+
         # Conexão segura
         mydb = get_db_connection()
         if not mydb.is_connected():
             logging.error("Conexão falhou")
             return pd.DataFrame()
-            
+
         mycursor = mydb.cursor(dictionary=True)
-        
+
         # Query com filtro is_active e verificação de schema
         query = """
-            SELECT 
+            SELECT
                 id,
                 name,
                 jam_level,
@@ -752,16 +752,16 @@ def get_route_metadata():
             FROM routes
             WHERE id_parceiro = 103
         """
-        
+
         mycursor.execute(query)
         results = mycursor.fetchall()
-        
+
         if not results:
             logging.warning("Nenhum dado válido encontrado")
             return pd.DataFrame()
-            
+
         df = pd.DataFrame(results)
-        
+
         # Conversão segura de tipos
         conversions = {
             'avg_speed': 'float32',
@@ -769,13 +769,13 @@ def get_route_metadata():
             'historic_speed': 'float32',
             'historic_time': 'int32'
         }
-        
+
         for col, dtype in conversions.items():
             df[col] = pd.to_numeric(df[col], errors='coerce').astype(dtype)
-        
+
         # Remover linhas inválidas após conversão
         df = df.dropna()
-        
+
         logging.info(f"Dados carregados: {len(df)} registros válidos")
         return df
 
@@ -788,9 +788,9 @@ def get_route_metadata():
     finally:
         try:
             if mycursor: mycursor.close()
-            if mydb: mydb.close()
+            # Não fechar a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
         except Exception as e:
-            logging.error(f"Erro ao fechar conexão: {e}")
+            logging.error(f"Erro ao fechar cursor: {e}")
 
 def analyze_current_vs_historical(metadata_df):
     """
