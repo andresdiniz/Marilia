@@ -1500,7 +1500,7 @@ def main():
             st.info("Nenhuma conexão ativa encontrada")
     
     # Adicione no final da função main()
-    logging.info(f"Conexões ativas ao finalizar: {get_db_connections_count()}")
+    logging.info(f"Conexões ativas ao finalizar: {get_db_connections_details()}")
 
 
 # --- Executa o aplicativo Streamlit ---
