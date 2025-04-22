@@ -265,7 +265,6 @@ def get_db_connection():
         st.error(f"Erro ao conectar ao banco de dados: {e}")
         st.stop()
 
-@st.cache_data(ttl=300) # Cache dos dados por 5 minutos (300 segundos)
 def get_data(start_date=None, end_date=None, route_name=None):
     """
     Busca dados históricos de velocidade com tratamento de palavras reservadas e cache.
