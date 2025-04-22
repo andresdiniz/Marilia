@@ -719,7 +719,6 @@ def gerar_insights(df):
 
     return "\n\n".join(insights)
 
-@st.cache_data(ttl=300) # Cache dos dados por 5 minutos (300 segundos)
 def get_route_metadata():
     """
     Busca metadados das rotas ativas com tratamento robusto de erros
