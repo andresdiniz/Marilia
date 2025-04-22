@@ -246,611 +246,835 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 # password = "@Ndre2025." # Mude isso para sua senha real ou use secrets
 # database = "u335174317_wazeportal"
 
+@st.cache_resource # ESSENCIAL: Cache a conexão do banco de dados
 def get_db_connection():
-    """
-    Estabelece e retorna uma conexão com o banco de dados MySQL.
-    A conexão é cacheada pelo Streamlit.
-    """
-    try:
-        conn = mysql.connector.connect(
-            host=st.secrets["mysql"]["host"],
-            user=st.secrets["mysql"]["user"],
-            password=st.secrets["mysql"]["password"],
-            database=st.secrets["mysql"]["database"]
-        )
-        logging.info("Conexão com o banco de dados estabelecida com sucesso.")
-        return conn
-    except Exception as e:
-        logging.exception("Erro ao conectar ao banco de dados:")
-        st.error(f"Erro ao conectar ao banco de dados: {e}")
-        st.stop()
+    """
+    Estabelece e retorna uma conexão com o banco de dados MySQL.
+    A conexão é cacheada pelo Streamlit usando @st.cache_resource.
+    """
+    logging.info("Tentando estabelecer conexão com o banco de dados (via cache_resource).")
+    try:
+        conn = mysql.connector.connect(
+            host=st.secrets["mysql"]["host"],
+            user=st.secrets["mysql"]["user"],
+            password=st.secrets["mysql"]["password"],
+            database=st.secrets["mysql"]["database"]
+        )
+        # O Streamlit fechará a conexão automaticamente quando o recurso cacheado for invalidado
+        logging.info("Conexão com o banco de dados estabelecida/reutilizada com sucesso.")
+        return conn
+    except Exception as e:
+        logging.exception("Erro ao conectar ao banco de dados:")
+        st.error(f"Erro ao conectar ao banco de dados: {e}")
+        st.stop()
 
+
+@st.cache_resource # Cache o engine SQLAlchemy
+def get_cached_sqlalchemy_engine():
+    """
+    Cria e retorna um engine SQLAlchemy cacheado.
+    """
+    logging.info("Tentando criar/reutilizar engine SQLAlchemy (via cache_resource).")
+    try:
+        engine = create_engine(
+            f'mysql+mysqlconnector://{st.secrets["mysql"]["user"]}:{st.secrets["mysql"]["password"]}@{st.secrets["mysql"]["host"]}/{st.secrets["mysql"]["database"]}'
+        )
+        logging.info("Engine SQLAlchemy criada/reutilizada com sucesso.")
+        return engine
+    except Exception as e:
+        logging.exception("Erro ao criar engine SQLAlchemy:")
+        st.error(f"Erro ao criar engine SQLAlchemy: {e}")
+        # Dependendo do uso, talvez não precise parar a aplicação aqui, mas logar e retornar None
+        return None # Retorna None ou lança exceção
+
+
+# @st.cache_data(ttl=600) # Opcional: Cache os resultados da consulta por 10 minutos
 def get_data(start_date=None, end_date=None, route_name=None):
-    """
-    Busca dados históricos de velocidade com tratamento de palavras reservadas e cache.
-    """
-    mydb = None
-    mycursor = None
-    try:
-        mydb = get_db_connection()
-        mycursor = mydb.cursor()
-        query = """
-            SELECT
-                hr.route_id,
-                r.name AS route_name,
-                hr.`data` AS data,
-                hr.velocidade
-            FROM historic_routes hr
-            INNER JOIN routes r
-                ON hr.route_id = r.id
-                AND r.id_parceiro = 103
-            WHERE 1=1
-        """
-        conditions = []
-        params = []
-        if route_name:
-            conditions.append("r.name = %s")
-            params.append(route_name)
-        if start_date:
-            conditions.append("hr.`data` >= %s")
-            params.append(start_date)
-        if end_date:
-            end_date_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
-            end_date_plus_one = end_date_dt.strftime("%Y-%m-%d")
-            conditions.append("hr.`data` < %s")
-            params.append(end_date_plus_one)
-        if conditions:
-            query += " AND " + " AND ".join(conditions)
-        query += " ORDER BY hr.`data` ASC"
-        mycursor.execute(query, params)
-        results = mycursor.fetchall()
-        col_names = [i[0] for i in mycursor.description]
-        df = pd.DataFrame(results, columns=col_names)
-        if not df.empty:
-            df['data'] = pd.to_datetime(df['data']).dt.tz_localize(None)
-            df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
-        return df, None
-    except mysql.connector.Error as err:
-        logging.error(f"Erro MySQL [{err.errno}]: {err.msg}")
-        return pd.DataFrame(), str(err)
-    except Exception as e:
-        logging.error(f"Erro geral: {str(e)}", exc_info=True)
-        return pd.DataFrame(), str(e)
-    finally:
-        try:
-            if mycursor: mycursor.close()
-            # Não feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
-        except Exception as e:
-            logging.error(f"Erro ao fechar cursor: {str(e)}")
+    """
+    Busca dados históricos de velocidade com tratamento de palavras reservadas e cache.
+    Usa a conexão cacheada.
+    """
+    # Obter a conexão cacheada (Streamlit garante que é a mesma instância em reruns)
+    mydb = get_db_connection()
+    mycursor = None # Inicializar cursor como None
+    try:
+        # Usar a conexão cacheada
+        mycursor = mydb.cursor()
+        query = """
+            SELECT
+                hr.route_id,
+                r.name AS route_name,
+                hr.`data` AS data,
+                hr.velocidade
+            FROM historic_routes hr
+            INNER JOIN routes r
+                ON hr.route_id = r.id
+                AND r.id_parceiro = 103
+            WHERE 1=1
+        """
+        conditions = []
+        params = []
+        if route_name:
+            conditions.append("r.name = %s")
+            params.append(route_name)
+        if start_date:
+            conditions.append("hr.`data` >= %s")
+            params.append(start_date)
+        if end_date:
+            end_date_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
+            end_date_plus_one = end_date_dt.strftime("%Y-%m-%d")
+            conditions.append("hr.`data` < %s")
+            params.append(end_date_plus_one)
+        if conditions:
+            query += " AND " + " AND ".join(conditions)
+        query += " ORDER BY hr.`data` ASC"
+
+        logging.info(f"Executando query em get_data: {query} com params: {params}")
+        mycursor.execute(query, params)
+        results = mycursor.fetchall()
+
+        col_names = [i[0] for i in mycursor.description]
+        df = pd.DataFrame(results, columns=col_names)
+
+        if not df.empty:
+            # Conversão segura de tipos
+            df['data'] = pd.to_datetime(df['data'], errors='coerce').dt.tz_localize(None)
+            df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
+            # Remover linhas onde a conversão falhou
+            df.dropna(subset=['data', 'velocidade'], inplace=True)
+
+
+        logging.info(f"get_data retornou {len(df)} registros.")
+        return df, None
+    except mysql.connector.Error as err:
+        logging.error(f"Erro MySQL em get_data [{err.errno}]: {err.msg}", exc_info=True)
+        return pd.DataFrame(), str(err)
+    except Exception as e:
+        logging.error(f"Erro geral em get_data: {str(e)}", exc_info=True)
+        return pd.DataFrame(), str(e)
+    finally:
+        # Sempre fechar o cursor
+        if mycursor:
+            try:
+                mycursor.close()
+                logging.info("Cursor fechado em get_data.")
+            except Exception as e:
+                logging.error(f"Erro ao fechar cursor em get_data: {str(e)}")
+        # NÃO feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+
 
 @st.cache_data(ttl=3600) # Cache dos nomes das rotas por 1 hora (3600 segundos)
 def get_all_route_names():
-    """
-    Busca todos os nomes de rotas distintos no banco de dados e os cacheia.
-    """
-    mydb = None
-    mycursor = None
-    try:
-        mydb = get_db_connection()
-        mycursor = mydb.cursor()
-        query = "SELECT DISTINCT name FROM routes WHERE id_parceiro = 103"
-        mycursor.execute(query)
-        results = mycursor.fetchall()
-        return [row[0] for row in results]
-    except Exception as e:
-        logging.exception("Erro ao obter nomes das rotas:")
-        st.error(f"Erro ao obter nomes das rotas: {e}")
-        return []
-    finally:
-        if mycursor:
-            mycursor.close()
-        # Não feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+    """
+    Busca todos os nomes de rotas distintos no banco de dados e os cacheia.
+    Usa a conexão cacheada.
+    """
+    mydb = get_db_connection() # Obtém a conexão cacheada
+    mycursor = None # Inicializar cursor como None
+    try:
+        mycursor = mydb.cursor()
+        query = "SELECT DISTINCT name FROM routes WHERE id_parceiro = 103"
+        logging.info("Executando query em get_all_route_names.")
+        mycursor.execute(query)
+        results = mycursor.fetchall()
+        names = [row[0] for row in results]
+        logging.info(f"get_all_route_names retornou {len(names)} nomes.")
+        return names
+    except Exception as e:
+        logging.exception("Erro ao obter nomes das rotas:")
+        st.error(f"Erro ao obter nomes das rotas: {e}")
+        return []
+    finally:
+        if mycursor:
+            try:
+                mycursor.close()
+                logging.info("Cursor fechado em get_all_route_names.")
+            except Exception as e:
+                logging.error(f"Erro ao fechar cursor em get_all_route_names: {str(e)}")
+        # NÃO feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+
 
 @st.cache_data(ttl=3600) # Cache das coordenadas por 1 hora (3600 segundos)
 def get_route_coordinates(route_id):
-    """
-    Busca as coordenadas geográficas para uma rota específica e as cacheia.
-    """
-    mydb = None
-    mycursor = None
-    try:
-        mydb = get_db_connection()
-        mycursor = mydb.cursor()
-        query = """
-        SELECT rl.x, rl.y
-        FROM route_lines rl
-        JOIN routes r ON rl.route_id = r.id
-        WHERE rl.route_id = %s
-        AND r.id_parceiro = 103
-        ORDER BY rl.id"""
-        mycursor.execute(query, (route_id,))
-        results = mycursor.fetchall()
-        df = pd.DataFrame(results, columns=['longitude', 'latitude'])
-        return df
-    except Exception as e:
-        logging.exception(f"Erro ao obter coordenadas para route_id {route_id}:")
-        st.error(f"Erro ao obter coordenadas: {e}")
-        return pd.DataFrame()
-    finally:
-        if mycursor:
-            mycursor.close()
-        # Não feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+    """
+    Busca as coordenadas geográficas para uma rota específica e as cacheia.
+    Usa a conexão cacheada.
+    """
+    mydb = get_db_connection() # Obtém a conexão cacheada
+    mycursor = None # Inicializar cursor como None
+    try:
+        mycursor = mydb.cursor()
+        query = """
+        SELECT rl.x, rl.y
+        FROM route_lines rl
+        JOIN routes r ON rl.route_id = r.id
+        WHERE rl.route_id = %s
+        AND r.id_parceiro = 103
+        ORDER BY rl.id"""
+        logging.info(f"Executando query em get_route_coordinates para route_id {route_id}.")
+        mycursor.execute(query, (route_id,))
+        results = mycursor.fetchall()
+        df = pd.DataFrame(results, columns=['longitude', 'latitude'])
+        logging.info(f"get_route_coordinates retornou {len(df)} registros.")
+        return df
+    except Exception as e:
+        logging.exception(f"Erro ao obter coordenadas para route_id {route_id}:")
+        st.error(f"Erro ao obter coordenadas: {e}")
+        return pd.DataFrame()
+    finally:
+        if mycursor:
+            try:
+                mycursor.close()
+                logging.info("Cursor fechado em get_route_coordinates.")
+            except Exception as e:
+                logging.error(f"Erro ao fechar cursor em get_route_coordinates: {str(e)}")
+        # NÃO feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+
+@st.cache_data(ttl=60) # Cache metadados por 60 segundos (pode ajustar)
+def get_route_metadata():
+    """
+    Busca metadados das rotas ativas com tratamento robusto de erros
+    Retorna DataFrame com colunas:
+    [id, name, jam_level, avg_speed, avg_time, historic_speed, historic_time]
+    Usa a conexão cacheada.
+    """
+    mydb = get_db_connection() # Obtém a conexão cacheada
+    mycursor = None # Inicializar cursor como None
+    try:
+        logging.info("Iniciando busca de metadados...")
+
+        # Usar a conexão cacheada. Verificar se está conectada (embora cache_resource deva garantir)
+        if not mydb.is_connected():
+            logging.error("Conexão do cache_resource não está conectada.")
+            # Tente reconectar? Ou deixe o cache_resource invalidar e criar uma nova?
+            # Para cache_resource, o Streamlit DEVE tentar religar se necessário.
+            # Se ainda falhar, talvez o problema seja nas credenciais ou no banco.
+            return pd.DataFrame()
 
 
-# --- Funções de Processamento e Análise ---
+        mycursor = mydb.cursor(dictionary=True)
+
+        # Query com filtro id_parceiro = 103
+        query = """
+            SELECT
+                id,
+                name,
+                jam_level,
+                avg_speed,
+                avg_time,
+                historic_speed,
+                historic_time
+            FROM routes
+            WHERE id_parceiro = 103
+        """
+
+        logging.info("Executando query em get_route_metadata.")
+        mycursor.execute(query)
+        results = mycursor.fetchall()
+
+        if not results:
+            logging.warning("Nenhum dado válido encontrado em get_route_metadata.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(results)
+
+        # Conversão segura de tipos (já presente, mantida)
+        conversions = {
+            'avg_speed': 'float32',
+            'avg_time': 'int32',
+            'historic_speed': 'float32',
+            'historic_time': 'int32'
+        }
+
+        for col, dtype in conversions.items():
+            if col in df.columns: # Verifica se a coluna existe antes de converter
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype(dtype)
+            else:
+                logging.warning(f"Coluna '{col}' não encontrada no DataFrame de metadados.")
+
+
+        # Remover linhas inválidas após conversão (pode ser ajustado dependendo da necessidade)
+        # df = df.dropna() # Comentado para não remover rotas com alguns valores nulos
+
+        logging.info(f"get_route_metadata carregou {len(df)} registros.")
+        return df
+
+    except mysql.connector.Error as err:
+        logging.error(f"Erro MySQL em get_route_metadata: {err}", exc_info=True)
+        return pd.DataFrame()
+    except Exception as e:
+        logging.error(f"Erro geral em get_route_metadata: {e}", exc_info=True)
+        return pd.DataFrame()
+    finally:
+        if mycursor:
+            try:
+                mycursor.close()
+                logging.info("Cursor fechado em get_route_metadata.")
+            except Exception as e:
+                logging.error(f"Erro ao fechar cursor em get_route_metadata: {str(e)}")
+        # NÃO feche a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
+
+
+# --- Funções de Processamento e Análise (Mantidas como estão) ---
 
 def clean_data(df):
-    """
-    Limpa, interpola e adiciona features temporais a um DataFrame de velocidade.
+    # ... (código da função clean_data aqui)
+    """
+    Limpa, interpola e adiciona features temporais a um DataFrame de velocidade.
 
-    Args:
-        df (pd.DataFrame): DataFrame bruto com colunas 'data' e 'velocidade'.
+    Args:
+        df (pd.DataFrame): DataFrame bruto com colunas 'data' e 'velocidade'.
 
-    Returns:
-        pd.DataFrame: DataFrame limpo com 'day_of_week' e 'hour' adicionados.
-                      Retorna DataFrame vazio se todas as velocidades forem nulas.
-    """
-    if df.empty:
-        return pd.DataFrame()
+    Returns:
+        pd.DataFrame: DataFrame limpo com 'day_of_week' e 'hour' adicionados.
+                      Retorna DataFrame vazio se todas as velocidades forem nulas ou se o input for vazio.
+    """
+    if df.empty:
+        logging.warning("DataFrame vazio fornecido para clean_data.")
+        return pd.DataFrame()
 
-    df = df.copy()
+    df = df.copy()
 
-    # Adicionar validação de dados: verificar se todas as velocidades estão nulas
-    if df['velocidade'].isnull().all():
-        st.warning("Após o carregamento, todas as velocidades estão nulas. Verifique os dados de origem ou o período selecionado.")
-        return pd.DataFrame() # Retorna DataFrame vazio se todos os valores são nulos
+    # Adicionar validação de dados: verificar se todas as velocidades estão nulas
+    if df['velocidade'].isnull().all():
+        st.warning("Após o carregamento, todas as velocidades estão nulas. Verifique os dados de origem ou o período selecionado.")
+        logging.warning("Todas as velocidades são nulas após o carregamento em clean_data.")
+        return pd.DataFrame() # Retorna DataFrame vazio se todos os valores são nulos
 
-    # Assume que o DataFrame já está filtrado pela rota e período
-    # e que a coluna 'data' já é datetime sem timezone e 'velocidade' é numérica
-    df = df.sort_values('data')
-    df['velocidade'] = (
-        df['velocidade']
-        .clip(upper=150) # Limita a velocidade a 150 km/h
-        .interpolate(method='linear') # Interpola valores ausentes linearmente
-        .ffill() # Preenche valores restantes com o último valor válido
-        .bfill() # Preenche valores restantes com o próximo valor válido
-    )
-    # Recalcular dia da semana e hora após interpolação/limpeza, se necessário
-    # Usar locale para nomes dos dias em português
-    # import locale
-    # locale.setlocale(locale.LC_TIME, 'pt_BR.UTF8') # Configurar localidade (pode precisar instalar no ambiente)
-    df['day_of_week'] = df['data'].dt.day_name() # Retorna em inglês por padrão, mapearemos para o heatmap
-    df['hour'] = df['data'].dt.hour
-    return df.dropna(subset=['velocidade']) # Remove linhas onde a velocidade ainda é NaN
+    # Assume que o DataFrame já está filtrado pela rota e período
+    # e que a coluna 'data' já é datetime sem timezone e 'velocidade' é numérica
+    df = df.sort_values('data')
+
+    # Aplicar clip e interpolação
+    df['velocidade'] = df['velocidade'].clip(upper=150) # Limita a velocidade a 150 km/h
+
+    # Interpolação e preenchimento de NaN
+    # df['velocidade'] = df['velocidade'].interpolate(method='linear') # Interpola valores ausentes linearmente
+    # df['velocidade'] = df['velocidade'].ffill() # Preenche valores restantes com o último valor válido
+    # df['velocidade'] = df['velocidade'].bfill() # Preenche valores restantes com o próximo valor válido
+
+    # Interpolação com base no tempo após garantir que o índice seja datetime
+    # df = df.set_index('data')
+    # df['velocidade'] = df['velocidade'].interpolate(method='time').ffill().bfill()
+    # df = df.reset_index()
+
+    # Interpolação apenas na coluna velocidade, sem alterar o índice para evitar problemas
+    df['velocidade'] = df['velocidade'].interpolate(method='linear', limit_direction='both').ffill().bfill()
+    # O ffill e bfill finais são importantes para preencher NaNs no início/fim da série após a interpolação
+
+    # Recalcular dia da semana e hora após interpolação/limpeza, se necessário
+    # Usar locale para nomes dos dias em português (comentado, pois day_name() já retorna em inglês por padrão)
+    # import locale
+    # locale.setlocale(locale.LC_TIME, 'pt_BR.UTF8') # Configurar localidade (pode precisar instalar no ambiente)
+    df['day_of_week'] = df['data'].dt.day_name() # Retorna em inglês por padrão, mapearemos para o heatmap
+    df['hour'] = df['data'].dt.hour
+
+    # Remover linhas onde a velocidade AINDA é NaN após todo o processo
+    initial_rows = len(df)
+    df.dropna(subset=['velocidade'], inplace=True)
+    if len(df) < initial_rows:
+        logging.warning(f"Removidas {initial_rows - len(df)} linhas com velocidade NaN após interpolação/preenchimento.")
+
+    logging.info(f"clean_data retornou DataFrame com {len(df)} registros.")
+    return df
 
 
 def seasonal_decomposition_plot(df):
-    """
-    Realiza e plota a decomposição sazonal de uma série temporal de velocidade.
+    # ... (código da função seasonal_decomposition_plot aqui)
+    """
+    Realiza e plota a decomposição sazonal de uma série temporal de velocidade.
 
-    Args:
-        df (pd.DataFrame): DataFrame com dados limpos e índice de tempo.
-    """
-    if df.empty:
-        st.info("Não há dados para realizar a decomposição sazonal.")
-        return
+    Args:
+        df (pd.DataFrame): DataFrame com dados limpos e coluna 'data'.
+    """
+    logging.info("Iniciando seasonal_decomposition_plot.")
+    if df.empty:
+        st.info("Não há dados para realizar a decomposição sazonal.")
+        logging.warning("DataFrame vazio fornecido para seasonal_decomposition_plot.")
+        return
 
-    # Garantir frequência temporal, interpolando se houver lacunas curtas
-    # Usa a coluna 'data' como índice e define a frequência como 3 minutos
-    df_ts = df.set_index('data')['velocidade'].asfreq('3min')
+    # Garantir que 'data' é o índice e a série tem frequência regular
+    # Usa a coluna 'data' como índice e define a frequência como 3 minutos
+    try:
+        # Garante que a coluna 'data' é datetime antes de setar como índice
+        df['data'] = pd.to_datetime(df['data'])
+        df_ts = df.set_index('data')['velocidade']
+        df_ts = df_ts.asfreq('3min') # Define a frequência da série temporal
+    except Exception as e:
+        logging.error(f"Erro ao preparar série temporal para decomposição sazonal: {e}", exc_info=True)
+        st.warning(f"Erro ao preparar dados para decomposição sazonal: {e}")
+        return
 
-    # Interpolar apenas se houver dados suficientes após asfreq
-    # Verifica a proporção de NaNs antes de interpolar
-    if df_ts.isnull().sum() / len(df_ts) > 0.2: # Exemplo: Se mais de 20% dos dados são NaN após asfreq
-         st.warning("Muitos dados faltantes ou espaçados para interpolação e decomposição sazonal confiáveis.")
-         return
 
-    df_ts = df_ts.interpolate(method='time')
+    # Interpolar apenas se houver dados suficientes após asfreq
+    # Verifica a proporção de NaNs antes de interpolar
+    nan_ratio = df_ts.isnull().sum() / len(df_ts) if len(df_ts) > 0 else 0
+    if nan_ratio > 0.3: # Aumentado o limite para 30% - ajuste conforme necessário
+        st.warning(f"Muitos dados faltantes ({nan_ratio:.1%}) após definir frequência para interpolação e decomposição sazonal confiáveis.")
+        logging.warning(f"Alto percentual de NaNs ({nan_ratio:.1%}) após asfreq em seasonal_decomposition_plot.")
+        return
 
-    # O período para sazonalidade diária em dados de 3 em 3 minutos é 480 (24 horas * 60 min / 3 min)
-    period = 480 # Usando o período padrão
+    # Interpolar valores ausentes após definir a frequência
+    df_ts = df_ts.interpolate(method='time')
 
-    # Precisa de pelo menos 2 ciclos completos de dados para decomposição sazonal
-    if len(df_ts.dropna()) < 2 * period:
-         st.warning(f"Dados insuficientes para decomposição sazonal com período de {period}. Necessário pelo menos {2*period} pontos de dados válidos.")
-         return
+    # Remover NaNs que possam ter ficado no início/fim após a interpolação baseada em tempo
+    df_ts.dropna(inplace=True)
 
-    try:
-        # model='additive' é geralmente adequado para velocidade onde as variações são mais constantes
-        decomposition = seasonal_decompose(df_ts.dropna(), model='additive', period=period)
-        fig, ax = plt.subplots(4, 1, figsize=(12, 10)) # Adiciona componente de Resíduo
-        decomposition.observed.plot(ax=ax[0], title='Observado')
-        decomposition.trend.plot(ax=ax[1], title='Tendência')
-        decomposition.seasonal.plot(ax=ax[2], title=f'Sazonalidade (Periodo {period})')
-        decomposition.resid.plot(ax=ax[3], title='Resíduo')
-        plt.tight_layout()
+    # O período para sazonalidade diária em dados de 3 em 3 minutos é 480 (24 horas * 60 min / 3 min)
+    period = 480 # Usando o período padrão para sazonalidade diária a cada 3 minutos
 
-        # Configurar cores dos eixos e títulos para o tema escuro
-        for a in ax:
-            a.tick_params(axis='x', colors=TEXT_COLOR)
-            a.tick_params(axis='y', colors=TEXT_COLOR)
-            a.title.set_color(TEXT_COLOR)
-            a.xaxis.label.set_color(TEXT_COLOR)
-            a.yaxis.label.set_color(TEXT_COLOR)
-            # Fundo dos subplots
-            a.set_facecolor(SECONDARY_BACKGROUND_COLOR)
+    # Precisa de pelo menos 2 ciclos completos de dados válidos para decomposição sazonal
+    min_data_points = 2 * period
+    if len(df_ts) < min_data_points:
+        st.warning(f"Dados insuficientes ({len(df_ts)} pontos válidos) para decomposição sazonal com período de {period}. Necessário pelo menos {int(min_data_points)} pontos de dados válidos após tratamento.")
+        logging.warning(f"Dados insuficientes ({len(df_ts)}) para decomposição sazonal.")
+        return
 
-        # Configurar cor de fundo da figura
-        fig.patch.set_facecolor(SECONDARY_BACKGROUND_COLOR)
+    try:
+        logging.info(f"Realizando decomposição sazonal com {len(df_ts)} pontos e período {period}.")
+        # model='additive' é geralmente adequado para velocidade onde as variações são mais constantes
+        decomposition = seasonal_decompose(df_ts, model='additive', period=period)
 
-        st.pyplot(fig)
-    except Exception as e:
-         logging.exception("Erro ao realizar decomposição sazonal:") # Log detalhado
-         st.warning(f"Não foi possível realizar a decomposição sazonal: {e}")
-         st.info("Verifique se os dados têm uma frequência regular ou se há dados suficientes.")
+        fig, ax = plt.subplots(4, 1, figsize=(12, 10)) # Adiciona componente de Resíduo
+        decomposition.observed.plot(ax=ax[0], title='Observado')
+        decomposition.trend.plot(ax=ax[1], title='Tendência')
+        decomposition.seasonal.plot(ax=ax[2], title=f'Sazonalidade (Período {period})')
+        decomposition.resid.plot(ax=ax[3], title='Resíduo')
+        plt.tight_layout()
+
+        # Configurar cores dos eixos e títulos para o tema escuro
+        for a in ax:
+            a.tick_params(axis='x', colors=TEXT_COLOR)
+            a.tick_params(axis='y', colors=TEXT_COLOR)
+            a.title.set_color(TEXT_COLOR)
+            a.xaxis.label.set_color(TEXT_COLOR)
+            a.yaxis.label.set_color(TEXT_COLOR)
+            # Fundo dos subplots
+            a.set_facecolor(SECONDARY_BACKGROUND_COLOR)
+
+        # Configurar cor de fundo da figura
+        fig.patch.set_facecolor(SECONDARY_BACKGROUND_COLOR)
+        fig.suptitle("Decomposição Sazonal da Velocidade", color=TEXT_COLOR, fontsize=16) # Título geral
+        plt.subplots_adjust(top=0.95) # Ajustar espaçamento para o título
+
+        st.pyplot(fig)
+        plt.close(fig) # Fecha a figura para liberar memória
+    except Exception as e:
+        logging.exception("Erro ao realizar decomposição sazonal:") # Log detalhado
+        st.warning(f"Não foi possível realizar a decomposição sazonal: {e}")
+        st.info("Verifique se os dados têm uma frequência regular ou se há dados suficientes.")
 
 
 def create_holiday_exog(index):
-    """
-    Cria features exógenas binárias ('is_holiday' e 'is_pre_holiday') para um DateTimeIndex.
+    # ... (código da função create_holiday_exog aqui)
+    """
+    Cria features exógenas binárias ('is_holiday' e 'is_pre_holiday') para um DateTimeIndex.
 
-    Args:
-        index (pd.DateTimeIndex): Índice de tempo para o qual gerar as features.
+    Args:
+        index (pd.DateTimeIndex): Índice de tempo para o qual gerar as features.
 
-    Returns:
-        pd.DataFrame: DataFrame com as colunas 'is_holiday' e 'is_pre_holiday'.
-    """
-    if index.empty:
-        return pd.DataFrame(index=index)
+    Returns:
+        pd.DataFrame: DataFrame com as colunas 'is_holiday' e 'is_pre_holiday'.
+    """
+    logging.info("Criando features exógenas de feriado.")
+    if index is None or index.empty:
+        logging.warning("Índice vazio ou None fornecido para create_holiday_exog.")
+        return pd.DataFrame(columns=['is_holiday', 'is_pre_holiday'], index=index)
 
-    # Obter feriados brasileiros para os anos presentes no índice
-    br_holidays = holidays.CountryHoliday('BR', years=index.year.unique())
-    exog_df = pd.DataFrame(index=index)
+    try:
+        # Obter feriados brasileiros para os anos presentes no índice
+        # Pega o ano mínimo e máximo para garantir todos os feriados relevantes
+        start_year = index.min().year
+        end_year = index.max().year
+        logging.info(f"Buscando feriados para anos de {start_year} a {end_year}.")
+        br_holidays = holidays.CountryHoliday('BR', years=range(start_year, end_year + 1))
 
-    # is_holiday: Verifica se a data do timestamp atual é um feriado
-    exog_df['is_holiday'] = index.to_series().apply(lambda date: date.date() in br_holidays).astype(int)
+        exog_df = pd.DataFrame(index=index)
 
-    # is_pre_holiday: Verifica se a data EXATAMENTE 24 horas a partir do timestamp atual é um feriado,
-    # E a data atual NÃO é um feriado.
-    # Isso requer que o índice tenha uma frequência regular definida por asfreq.
-    if index.freq is None:
-         # Fallback para frequência irregular - verifica se o próximo dia CALENDAR (24h) é um feriado
-         exog_df['is_pre_holiday'] = index.to_series().apply(
-             lambda date: (date + pd.Timedelta(days=1)).date() in br_holidays and date.date() not in br_holidays
-         ).astype(int)
-    else:
-        # Usa a frequência para calcular um offset exato de 24 horas
-        one_day_offset = pd.Timedelta(days=1)
-        # Cria uma série de dates exatamente 24 horas no futuro com base na frequência do índice
-        dates_in_24h = index + one_day_offset
-        # Verifica se a data 24 hours later é um feriado
-        is_next_day_holiday = dates_in_24h.to_series().apply(lambda date: date.date() in br_holidays).astype(int)
-        # Uma data é véspera de feriado se a data 24h later é feriado E a data atual NÃO é feriado
-        exog_df['is_pre_holiday'] = is_next_day_holiday & (exog_df['is_holiday'] == 0)
+        # is_holiday: Verifica se a data do timestamp atual é um feriado
+        exog_df['is_holiday'] = index.to_series().apply(lambda date: date.date() in br_holidays).astype(int)
 
-    return exog_df
+        # is_pre_holiday: Verifica se a data EXATAMENTE 24 horas a partir do timestamp atual é um feriado,
+        # E a data atual NÃO é um feriado.
+        # Isso requer que o índice tenha uma frequência regular definida por asfreq.
+        if index.freq is None:
+            logging.warning("Índice sem frequência definida. Verificando véspera de feriado com offset de 1 dia calendário.")
+            # Fallback para frequência irregular - verifica se o próximo dia CALENDAR (24h) é um feriado
+            exog_df['is_pre_holiday'] = index.to_series().apply(
+                lambda date: (date + pd.Timedelta(days=1)).date() in br_holidays and date.date() not in br_holidays
+            ).astype(int)
+        else:
+            logging.info(f"Índice com frequência {index.freq}. Verificando véspera de feriado com offset de 24 horas exatas.")
+            # Usa a frequência para calcular um offset exato de 24 horas
+            one_day_offset = pd.Timedelta(days=1)
+            # Cria uma série de dates exatamente 24 horas no futuro com base na frequência do índice
+            dates_in_24h = index + one_day_offset
+            # Verifica se a data 24 hours later é um feriado
+            is_next_day_holiday = dates_in_24h.to_series().apply(lambda date: date.date() in br_holidays).astype(int)
+            # Uma data é véspera de feriado se a data 24h later é feriado E a data atual NÃO é feriado
+            exog_df['is_pre_holiday'] = is_next_day_holiday & (exog_df['is_holiday'] == 0)
 
+        logging.info("Features exógenas criadas com sucesso.")
+        return exog_df
 
 # Função de previsão ARIMA (revisada para usar intervalos de confiança e tratamento de dados E EXOG)
 # Não cacheamos previsões pois elas dependem de dados recentes e podem ser acionadas pelo usuário
 # @st.cache_data # Não use cache_data para previsões se elas devem ser geradas sob demanda
 def create_arima_forecast(df, route_id, steps=10, m_period=480):
-    """
-    Cria e executa um modelo de previsão ARIMA sazonal com variáveis exógenas (feriados/vésperas).
+    # ... (código da função create_arima_forecast aqui)
+    """
+    Cria e executa um modelo de previsão ARIMA sazonal com variáveis exógenas (feriados/vésperas).
 
-    Args:
-        df (pd.DataFrame): DataFrame com dados históricos de velocidade limpos.
-        route_id (int): ID da rota.
-        steps (int, optional): Número de passos futuros para prever. Defaults to 10.
-        m_period (int, optional): Período sazonal para o auto_arima. Defaults to 480 (diário @ 3min).
+    Args:
+        df (pd.DataFrame): DataFrame com dados históricos de velocidade limpos.
+        route_id (int): ID da rota.
+        steps (int, optional): Número de passos futuros para prever. Defaults to 10.
+        m_period (int, optional): Período sazonal para o auto_arima. Defaults to 480 (diário @ 3min).
 
-    Returns:
-        pd.DataFrame: DataFrame com a previsão (datas, yhat, limites de confiança) ou DataFrame vazio em caso de falha.
-    """
-    if df.empty:
-        # Mensagem já exibida na chamada
-        return pd.DataFrame()
+    Returns:
+        pd.DataFrame: DataFrame com a previsão (datas, yhat, limites de confiança) ou DataFrame vazio em caso de falha.
+    """
+    logging.info(f"Iniciando create_arima_forecast para route_id {route_id}.")
+    if df is None or df.empty:
+        logging.warning("DataFrame vazio ou None fornecido para create_arima_forecast.")
+        # Mensagem já exibida na chamada
+        return pd.DataFrame()
 
-    # Preparar dados para auto_arima (já vem limpo)
-    # Garantir frequência temporal, interpolando se houver lacunas curtas
-    arima_data_full = df.set_index('data')['velocidade'].asfreq('3min').dropna()
-
-    # Criar features exógenas (feriados e vésperas) para o período dos dados históricos
-    exog_data_full = create_holiday_exog(arima_data_full.index)
-
-    # Alinhar dados da série temporal (y) e dados exógenos (X) usando um join interno
-    # Isso garante que temos 'y' e 'X' para os mesmos timestamps
-    combined_df = arima_data_full.to_frame(name='y').join(exog_data_full, how='inner').dropna()
-    arima_data = combined_df['y']
-    exog_data = combined_df[['is_holiday', 'is_pre_holiday']]
-
-
-    # Precisa de dados suficientes para o modelo sazonal ARIMA
-    # Um mínimo de 2-3 ciclos sazonais é recomendado
-    min_data_points = 2 * m_period # Mínimo 2 ciclos completos para detectar sazonalidade
-
-    if len(arima_data) < min_data_points:
-         st.warning(f"Dados insuficientes ({len(arima_data)} pontos) para treinar um modelo de previsão ARIMA sazonal robusto com período {m_period}. Necessário pelo menos {int(min_data_points)} pontos válidos após alinhamento.")
-         return pd.DataFrame()
-
-    try:
-        # auto_arima encontrará os melhores parâmetros p,d,q,P,D,Q
-        # Passando o período sazonal 'm' selecionado pelo usuário
-        # PASSANDO DADOS EXÓGENOS (X=exog_data)
-        with st.spinner(f"Treinando modelo ARIMA para a rota {route_id} com período sazonal m={m_period}..."):
-             model = auto_arima(arima_data, X=exog_data, seasonal=True, m=m_period,
-                                error_action='ignore', suppress_warnings=True,
-                                stepwise=True, random_state=42,
-                                n_fits=20) # Limitar o número de fits para evitar tempo excessivo
-
-        # Gerar dates futuras com base na última data histórica e frequência
-        last_date = arima_data.index.max()
-        # A frequência deve ser compatível com m=480 ou 3360 (baseado em 3min)
-        freq_str = '3min' # Assumindo 3minutos como base
-
-        future_dates = pd.date_range(start=last_date, periods=steps + 1, freq=freq_str)[1:]
-
-        # Criar features exógenas (feriados e vésperas) para o PERÍODO DA PREVISÃO
-        future_exog_data = create_holiday_exog(future_dates)
-        # Garantir que o índice dos dados exógenos futuros corresponda exatamente às dates futuras
-        future_exog_data = future_exog_data.reindex(future_dates)
+    # Preparar dados para auto_arima (já vem limpo)
+    # Garantir frequência temporal, interpolando se houver lacunas curtas
+    try:
+        # Garante que a coluna 'data' é datetime antes de setar como índice
+        df['data'] = pd.to_datetime(df['data'])
+        arima_data_full = df.set_index('data')['velocidade'].asfreq('3min').dropna()
+    except Exception as e:
+        logging.error(f"Erro ao preparar série temporal para ARIMA: {e}", exc_info=True)
+        st.warning(f"Erro ao preparar dados para o modelo ARIMA: {e}")
+        return pd.DataFrame()
 
 
-        # Realizar a previsão com intervalos de confiança
-        # PASSANDO DADOS EXÓGENOS FUTUROS (X=future_exog_data)
-        forecast, conf_int = model.predict(n_periods=steps, return_conf_int=True, X=future_exog_data)
+    # Criar features exógenas (feriados e vésperas) para o período dos dados históricos
+    exog_data_full = create_holiday_exog(arima_data_full.index)
+
+    # Alinhar dados da série temporal (y) e dados exógenos (X) usando um join interno
+    # Isso garante que temos 'y' e 'X' para os mesmos timestamps
+    try:
+        combined_df = arima_data_full.to_frame(name='y').join(exog_data_full, how='inner').dropna()
+        arima_data = combined_df['y']
+        exog_data = combined_df[['is_holiday', 'is_pre_holiday']]
+        logging.info(f"Dados alinhados para ARIMA: {len(arima_data)} pontos.")
+    except Exception as e:
+        logging.error(f"Erro ao alinhar dados e features exógenas para ARIMA: {e}", exc_info=True)
+        st.warning(f"Erro ao alinhar dados para o modelo ARIMA: {e}")
+        return pd.DataFrame()
 
 
-        forecast_df = pd.DataFrame({
-            'ds': future_dates,
-            'yhat': forecast,
-            'yhat_lower': conf_int[:, 0], # Limite inferior do intervalo de confiança
-            'yhat_upper': conf_int[:, 1], # Limite superior do intervalo de confiança
-            'id_route': route_id
-        })
+    # Precisa de dados suficientes para o modelo sazonal ARIMA
+    # Um mínimo de 2-3 ciclos sazonais é recomendado
+    min_data_points = 2 * m_period # Mínimo 2 ciclos completos para detectar sazonalidade
 
-        # Garante que as previsões e intervalos de confiança não são negativos
-        forecast_df[['yhat', 'yhat_lower', 'yhat_upper']] = forecast_df[['yhat', 'yhat_lower', 'yhat_upper']].clip(lower=0)
+    if len(arima_data) < min_data_points:
+         st.warning(f"Dados insuficientes ({len(arima_data)} pontos válidos) para treinar um modelo de previsão ARIMA sazonal robusto com período {m_period}. Necessário pelo menos {int(min_data_points)} pontos válidos após alinhamento.")
+         logging.warning(f"Dados insuficientes ({len(arima_data)}) para treinar ARIMA sazonal.")
+         return pd.DataFrame()
 
-        return forecast_df
-    except Exception as e:
-        logging.exception("Erro durante o treinamento ou previsão do modelo ARIMA:") # Log detalhado
-        st.error(f"Erro durante o treinamento ou previsão do modelo ARIMA: {str(e)}")
-        st.info("Verifique os dados de entrada, a quantidade de dados, ou a configuração do modelo ARIMA.")
-        return pd.DataFrame()
+    try:
+        # auto_arima encontrará os melhores parâmetros p,d,q,P,D,Q
+        # Passando o período sazonal 'm' selecionado pelo usuário
+        # PASSANDO DADOS EXÓGENOS (X=exog_data)
+        with st.spinner(f"Treinando modelo ARIMA para a rota {route_id} com período sazonal m={m_period}..."):
+             logging.info(f"Iniciando treinamento auto_arima com {len(arima_data)} pontos e exog_data.")
+             model = auto_arima(arima_data, X=exog_data, seasonal=True, m=m_period,
+                                error_action='ignore', suppress_warnings=True,
+                                stepwise=True, random_state=42,
+                                n_fits=20) # Limitar o número de fits para evitar tempo excessivo
+             logging.info(f"Treinamento auto_arima concluído. Parâmetros: {model.get_params()}")
+
+
+        # Gerar dates futuras com base na última data histórica e frequência
+        last_date = arima_data.index.max()
+        # A frequência deve ser compatível com m=480 ou 3360 (baseado em 3min)
+        freq_str = '3min' # Assumindo 3minutos como base
+
+        # Cria o range de datas futuras
+        # start é a próxima data após last_date com a frequência especificada
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(freq_str), periods=steps, freq=freq_str)
+
+        # Criar features exógenas (feriados e vésperas) para o PERÍODO DA PREVISÃO
+        future_exog_data = create_holiday_exog(future_dates)
+        # Garantir que o índice dos dados exógenos futuros corresponda exatamente às dates futuras
+        future_exog_data = future_exog_data.reindex(future_dates)
+
+        # Verificar se future_exog_data tem as colunas esperadas
+        if exog_data.columns.tolist() != future_exog_data.columns.tolist():
+            logging.error(f"Colunas de exógenas futuras não correspondem às de treino: {exog_data.columns} vs {future_exog_data.columns}")
+            st.error("Erro interno: Colunas de variáveis exógenas não correspondem entre treino e previsão.")
+            return pd.DataFrame()
+
+
+        # Realizar a previsão com intervalos de confiança
+        # PASSANDO DADOS EXÓGENOS FUTUROS (X=future_exog_data)
+        logging.info(f"Realizando previsão para {steps} passos com exógenas futuras.")
+        forecast, conf_int = model.predict(n_periods=steps, return_conf_int=True, X=future_exog_data)
+
+
+        forecast_df = pd.DataFrame({
+            'ds': future_dates,
+            'yhat': forecast,
+            'yhat_lower': conf_int[:, 0], # Limite inferior do intervalo de confiança
+            'yhat_upper': conf_int[:, 1], # Limite superior do intervalo de confiança
+            'id_route': route_id
+        })
+
+        # Garante que as previsões e intervalos de confiança não são negativos
+        forecast_df[['yhat', 'yhat_lower', 'yhat_upper']] = forecast_df[['yhat', 'yhat_lower', 'yhat_upper']].clip(lower=0)
+
+        logging.info(f"Previsão ARIMA concluída para {len(forecast_df)} pontos.")
+        return forecast_df
+    except Exception as e:
+        logging.exception("Erro durante o treinamento ou previsão do modelo ARIMA:") # Log detalhado
+        st.error(f"Erro durante o treinamento ou previsão do modelo ARIMA: {str(e)}")
+        st.info("Verifique os dados de entrada, a quantidade de dados, ou a configuração do modelo ARIMA.")
+        return pd.DataFrame()
 
 
 def save_forecast_to_db(forecast_df):
-    """
-    Salva um DataFrame de previsão no banco de dados.
+    """
+    Salva um DataFrame de previsão no banco de dados usando SQLAlchemy.
+    Usa o engine cacheado.
+    """
+    logging.info("Iniciando save_forecast_to_db.")
+    if forecast_df is None or forecast_df.empty:
+        st.warning("Não há previsão para salvar no banco de dados.")
+        logging.warning("DataFrame de previsão vazio ou None fornecido para save_forecast_to_db.")
+        return # Não salva se o DataFrame estiver vazio
 
-    Args:
-        forecast_df (pd.DataFrame): DataFrame com a previsão a ser salva.
-    """
-    if forecast_df.empty:
-        st.warning("Não há previsão para salvar no banco de dados.")
-        return # Não salva se o DataFrame estiver vazio
+    # Ajustar nomes de colunas para corresponder à tabela forecast_history
+    # Assumindo que a tabela forecast_history tem colunas como 'data', 'previsao', 'limite_inferior', 'limite_superior', 'id_rota'
+    forecast_df_mapped = forecast_df.rename(columns={
+        'ds': 'data',
+        'yhat': 'previsao',
+        'yhat_lower': 'limite_inferior',
+        'yhat_upper': 'limite_superior',
+        'id_route': 'id_rota'
+    })
 
-    # Ajustar nomes de colunas para corresponder à tabela forecast_history
-    # Assumindo que a tabela forecast_history tem colunas como 'data', 'previsao', 'limite_inferior', 'limite_superior', 'id_rota'
-    forecast_df_mapped = forecast_df.rename(columns={
-        'ds': 'data',
-        'yhat': 'previsao',
-        'yhat_lower': 'limite_inferior',
-        'yhat_upper': 'limite_superior',
-        'id_route': 'id_rota'
-    })
+    # Selecionar apenas as colunas que você quer salvar
+    cols_to_save = ['data', 'previsao', 'limite_inferior', 'limite_superior', 'id_rota']
+    # Verificar se todas as colunas existem no DataFrame antes de selecionar
+    if not all(col in forecast_df_mapped.columns for col in cols_to_save):
+        missing_cols = [col for col in cols_to_save if col not in forecast_df_mapped.columns]
+        logging.error(f"Colunas faltando no DataFrame para salvar: {missing_cols}")
+        st.error(f"Erro ao salvar previsão: Colunas necessárias faltando: {', '.join(missing_cols)}")
+        return
 
-    # Selecionar apenas as colunas que você quer salvar
-    cols_to_save = ['data', 'previsao', 'limite_inferior', 'limite_superior', 'id_rota']
-    forecast_df_mapped = forecast_df_mapped[cols_to_save]
+    forecast_df_mapped = forecast_df_mapped[cols_to_save]
 
-    try:
-        # st.info("Conectando ao banco de dados para salvar previsão...") # Substituído por toast/log
-        # Usando credenciais do secrets
-        engine = create_engine(
-            f'mysql+mysqlconnector://{st.secrets["mysql"]["user"]}:{st.secrets["mysql"]["password"]}@{st.secrets["mysql"]["host"]}/{st.secrets["mysql"]["database"]}'
-        )
-        # Usando o gerenciador de contexto do SQLAlchemy para garantir commit/rollback e fechar a conexão
-        # if_exists='append' adiciona novas linhas. Se você precisar evitar duplicatas,
-        # pode precisar de uma lógica de upsert ou verificar antes de inserir.
-        with engine.begin() as connection:
-             # st.info("Salvando previsão na tabela forecast_history...") # Substituído por toast/log
-             # Converte datetime para tipo compatível com SQL, como string ou timestamp
-             forecast_df_mapped['data'] = forecast_df_mapped['data'].dt.strftime('%Y-%m-%d %H:%M:%S')
-             forecast_df_mapped.to_sql('forecast_history', con=connection, if_exists='append', index=False)
-             st.toast("Previsão salva no banco de dados!", icon="✅") # Feedback ao usuário com toast
-    except Exception as e:
-        logging.exception("Erro ao salvar previsão no banco de dados:") # Log detalhado
-        st.error(f"Erro ao salvar previsão no banco de dados: {e}")
+    # Obter o engine SQLAlchemy cacheado
+    engine = get_cached_sqlalchemy_engine()
+    if engine is None:
+        logging.error("Não foi possível obter o engine SQLAlchemy cacheado.")
+        st.error("Erro interno: Não foi possível conectar ao banco para salvar a previsão.")
+        return
+
+    try:
+        # Usando o gerenciador de contexto do SQLAlchemy para garantir commit/rollback e fechar a conexão
+        # if_exists='append' adiciona novas linhas. Se você precisar evitar duplicatas,
+        # pode precisar de uma lógica de upsert ou verificar antes de inserir.
+        with engine.begin() as connection:
+             logging.info("Salvando previsão na tabela forecast_history usando SQLAlchemy...")
+             # Converte datetime para tipo compatível com SQL, como string ou timestamp
+             forecast_df_mapped['data'] = forecast_df_mapped['data'].dt.strftime('%Y-%m-%d %H:%M:%S')
+             forecast_df_mapped.to_sql('forecast_history', con=connection, if_exists='append', index=False)
+             logging.info("Previsão salva com sucesso.")
+             st.toast("Previsão salva no banco de dados!", icon="✅") # Feedback ao usuário com toast
+    except Exception as e:
+        logging.exception("Erro ao salvar previsão no banco de dados usando SQLAlchemy:") # Log detalhado
+        st.error(f"Erro ao salvar previsão no banco de dados: {e}")
 
 
 def gerar_insights(df):
-    """
-    Gera insights automáticos sobre a velocidade média, dia mais lento, etc.
+    # ... (código da função gerar_insights aqui)
+    """
+    Gera insights automáticos sobre a velocidade média, dia mais lento, etc.
 
-    Args:
-        df (pd.DataFrame): DataFrame com dados históricos de velocidade processados.
+    Args:
+        df (pd.DataFrame): DataFrame com dados históricos de velocidade processados.
 
-    Returns:
-        str: String formatada com os insights.
-    """
-    insights = []
-    if df.empty:
-        return "Não há dados para gerar insights neste período."
+    Returns:
+        str: String formatada com os insights.
+    """
+    logging.info("Iniciando gerar_insights.")
+    insights = []
+    if df is None or df.empty or 'velocidade' not in df.columns or df['velocidade'].isnull().all():
+        logging.warning("Dados insuficientes ou inválidos para gerar insights.")
+        return "Não há dados válidos para gerar insights neste período ou rota."
 
-    media_geral = df['velocidade'].mean()
-    insights.append(f"📌 Velocidade média geral: **{media_geral:.2f} km/h**")
+    try:
+        # Filtrar apenas velocidades válidas para cálculos
+        df_valid_speed = df.dropna(subset=['velocidade'])
 
-    # Encontrar o dia (data específica) com a menor velocidade média dentro do período selecionado
-    if 'data' in df.columns and not df['data'].empty:
-        # Agrupar por data (apenas a parte da data)
-        daily_avg = df.groupby(df['data'].dt.date)['velocidade'].mean()
-        if not daily_avg.empty:
-            dia_mais_lento_date = daily_avg.idxmin()
-            velocidade_dia_mais_lento = daily_avg.min()
-            insights.append(f"📅 Dia com a menor velocidade média: **{dia_mais_lento_date.strftime('%d/%m/%Y')}** ({velocidade_dia_mais_lento:.2f} km/h)")
-        else:
-             insights.append("Não foi possível calcular a velocidade média diária.")
-    else:
-         insights.append("Coluna 'data' não encontrada ou vazia no DataFrame para insights diários.")
+        if df_valid_speed.empty:
+            logging.warning("DataFrame vazio após remover velocidades NaN para gerar insights.")
+            return "Não há dados de velocidade válidos para gerar insights."
 
+        media_geral = df_valid_speed['velocidade'].mean()
+        insights.append(f"📌 Velocidade média geral: **{media_geral:.2f} km/h**")
 
-    # Encontrar o dia da semana mais lento em média
-    if 'day_of_week' in df.columns and not df['day_of_week'].empty:
-            weekday_avg = df.groupby('day_of_week')['velocidade'].mean()
-            if not weekday_avg.empty:
-                # Mapeamento para português e ordenação
-                dias_pt_map = {
-                    'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
-                    'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-                }
-                weekday_avg_pt = weekday_avg.rename(index=dias_pt_map) # <-- Esta é a linha 662 corrigida
-                dias_ordenados_pt = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
-                weekday_avg_pt = weekday_avg_pt.reindex(dias_ordenados_pt)
-
-                dia_da_semana_mais_lento = weekday_avg_pt.idxmin()
-                insights.append(f"🗓️ Dia da semana mais lento (em média): **{dia_da_semana_mais_lento}**")
-            else:
-                insights.append("Não foi possível calcular a velocidade média por dia da semana.")
-    else:
-        insights.append("Coluna 'day_of_week' não encontrada ou vazia no DataFrame para insights por dia da semana.")
-
-    # Encontrar a hora do dia mais lenta em média
-    if 'hour' in df.columns and not df['hour'].empty:
-        hourly_avg = df.groupby('hour')['velocidade'].mean()
-        if not hourly_avg.empty:
-            hora_mais_lenta = hourly_avg.idxmin()
-            insights.append(f"🕒 Hora do dia mais lenta (em média): **{hora_mais_lenta:02d}:00**")
-        else:
-             insights.append("Não foi possível calcular a velocidade média por hora do dia.")
-    else:
-         insights.append("Coluna 'hour' não encontrada ou vazia no DataFrame para insights por hora.")
+        # Encontrar o dia (data específica) com a menor velocidade média dentro do período selecionado
+        if 'data' in df_valid_speed.columns and not df_valid_speed['data'].empty:
+            try:
+                # Garante que a coluna 'data' é datetime antes de agrupar
+                df_valid_speed['data'] = pd.to_datetime(df_valid_speed['data'])
+                # Agrupar por data (apenas a parte da data)
+                daily_avg = df_valid_speed.groupby(df_valid_speed['data'].dt.date)['velocidade'].mean()
+                if not daily_avg.empty:
+                    dia_mais_lento_date = daily_avg.idxmin()
+                    velocidade_dia_mais_lento = daily_avg.min()
+                    insights.append(f"📅 Dia com a menor velocidade média: **{dia_mais_lento_date.strftime('%d/%m/%Y')}** ({velocidade_dia_mais_lento:.2f} km/h)")
+                else:
+                    insights.append("Não foi possível calcular a velocidade média diária.")
+            except Exception as e:
+                logging.error(f"Erro ao calcular insight diário: {e}", exc_info=True)
+                insights.append("Erro ao calcular insight de dia mais lento.")
+        else:
+            insights.append("Coluna 'data' não encontrada ou vazia no DataFrame para insights diários.")
 
 
-    return "\n\n".join(insights)
+        # Encontrar o dia da semana mais lento em média
+        if 'day_of_week' in df_valid_speed.columns and not df_valid_speed['day_of_week'].empty:
+            try:
+                weekday_avg = df_valid_speed.groupby('day_of_week')['velocidade'].mean()
+                if not weekday_avg.empty:
+                    # Mapeamento para português e ordenação
+                    dias_pt_map = {
+                        'Monday': 'Segunda-feira', 'Tuesday': 'Terça-feira', 'Wednesday': 'Quarta-feira',
+                        'Thursday': 'Quinta-feira', 'Friday': 'Sexta-feira', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+                    }
+                    # Aplicar o mapeamento e reindexar para ordenar
+                    weekday_avg_pt = weekday_avg.rename(index=dias_pt_map).reindex(dias_pt_map.values())
 
-def get_route_metadata():
-    """
-    Busca metadados das rotas ativas com tratamento robusto de erros
-    Retorna DataFrame com colunas:
-    [id, name, jam_level, avg_speed, avg_time, historic_speed, historic_time]
-    """
-    mydb = None
-    mycursor = None
-    try:
-        logging.info("Iniciando busca de metadados...")
+                    # Encontrar o dia da semana com a menor média (excluindo NaNs que podem surgir do reindex se não houver dados para um dia)
+                    dia_da_semana_mais_lento = weekday_avg_pt.dropna().idxmin() if not weekday_avg_pt.dropna().empty else "N/D"
 
-        # Conexão segura
-        mydb = get_db_connection()
-        if not mydb.is_connected():
-            logging.error("Conexão falhou")
-            return pd.DataFrame()
+                    insights.append(f"🗓️ Dia da semana mais lento (em média): **{dia_da_semana_mais_lento}**")
+                else:
+                    insights.append("Não foi possível calcular a velocidade média por dia da semana.")
+            except Exception as e:
+                logging.error(f"Erro ao calcular insight por dia da semana: {e}", exc_info=True)
+                insights.append("Erro ao calcular insight de dia da semana mais lento.")
+        else:
+            insights.append("Coluna 'day_of_week' não encontrada ou vazia no DataFrame para insights por dia da semana.")
 
-        mycursor = mydb.cursor(dictionary=True)
+        # Encontrar a hora do dia mais lenta em média
+        if 'hour' in df_valid_speed.columns and not df_valid_speed['hour'].empty:
+            try:
+                hourly_avg = df_valid_speed.groupby('hour')['velocidade'].mean()
+                if not hourly_avg.empty:
+                    hora_mais_lenta = hourly_avg.idxmin()
+                    insights.append(f"🕒 Hora do dia mais lenta (em média): **{hora_mais_lenta:02d}:00**")
+                else:
+                    insights.append("Não foi possível calcular a velocidade média por hora do dia.")
+            except Exception as e:
+                logging.error(f"Erro ao calcular insight por hora: {e}", exc_info=True)
+                insights.append("Erro ao calcular insight de hora mais lenta.")
+        else:
+            insights.append("Coluna 'hour' não encontrada ou vazia no DataFrame para insights por hora.")
 
-        # Query com filtro is_active e verificação de schema
-        query = """
-            SELECT
-                id,
-                name,
-                jam_level,
-                avg_speed,
-                avg_time,
-                historic_speed,
-                historic_time
-            FROM routes
-            WHERE id_parceiro = 103
-        """
-
-        mycursor.execute(query)
-        results = mycursor.fetchall()
-
-        if not results:
-            logging.warning("Nenhum dado válido encontrado")
-            return pd.DataFrame()
-
-        df = pd.DataFrame(results)
-
-        # Conversão segura de tipos
-        conversions = {
-            'avg_speed': 'float32',
-            'avg_time': 'int32',
-            'historic_speed': 'float32',
-            'historic_time': 'int32'
-        }
-
-        for col, dtype in conversions.items():
-            df[col] = pd.to_numeric(df[col], errors='coerce').astype(dtype)
-
-        # Remover linhas inválidas após conversão
-        df = df.dropna()
-
-        logging.info(f"Dados carregados: {len(df)} registros válidos")
-        return df
-
-    except mysql.connector.Error as err:
-        logging.error(f"Erro MySQL: {err}", exc_info=True)
-        return pd.DataFrame()
-    except Exception as e:
-        logging.error(f"Erro crítico: {e}", exc_info=True)
-        return pd.DataFrame()
-    finally:
-        try:
-            if mycursor: mycursor.close()
-            # Não fechar a conexão 'mydb' aqui, ela é gerenciada pelo cache_resource
-        except Exception as e:
-            logging.error(f"Erro ao fechar cursor: {e}")
+        logging.info("Geração de insights concluída.")
+        return "\n\n".join(insights)
 
 def analyze_current_vs_historical(metadata_df):
-    """
-    Analisa dados atuais vs históricos com tratamento de erros numéricos
-    """
-    try:
-        logging.info("Iniciando analyze_current_vs_historical")
-        logging.info(f"Tipo de metadata_df: {type(metadata_df)}")
-        if isinstance(metadata_df, pd.DataFrame):
-            logging.info(f"Colunas de metadata_df: {metadata_df.columns}")
-        else:
-            logging.warning("metadata_df não é um DataFrame")
+    # ... (código da função analyze_current_vs_historical aqui)
+    """
+    Analisa dados atuais vs históricos com tratamento de erros numéricos
+    """
+    try:
+        logging.info("Iniciando analyze_current_vs_historical")
 
-        df = metadata_df.copy()
+        if not isinstance(metadata_df, pd.DataFrame) or metadata_df.empty:
+            logging.warning("DataFrame de metadados inválido ou vazio para analyze_current_vs_historical.")
+            return pd.DataFrame()
 
-        # Substituir zeros para evitar divisão por zero
-        df['historic_time'] = df['historic_time'].replace(0, 1)
-        df['historic_speed'] = df['historic_speed'].replace(0, 1)
+        df = metadata_df.copy()
 
-        # Cálculo seguro das variações
-        df['var_time'] = ((df['avg_time'] - df['historic_time']) /
-                           df['historic_time']).fillna(0) * 100
-        df['var_speed'] = ((df['avg_speed'] - df['historic_speed']) /
-                         df['historic_speed']).fillna(0) * 100
+        # Validar a existência das colunas necessárias antes de usá-las
+        required_cols = ['avg_time', 'historic_time', 'avg_speed', 'historic_speed']
+        if not all(col in df.columns for col in required_cols):
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            logging.error(f"Colunas necessárias faltando em analyze_current_vs_historical: {missing_cols}")
+            st.error(f"Erro ao analisar dados: Colunas necessárias faltando: {', '.join(missing_cols)}")
+            return pd.DataFrame()
 
-        # Classificação de status
-        conditions = [
-            (df['var_time'] > 15) | (df['var_speed'] < -15),
-            (df['var_time'] > 5) | (df['var_speed'] < -5)
-        ]
-        choices = ['Crítico', 'Atenção']
-        df['status'] = np.select(conditions, choices, default='Normal')
+        # Substituir zeros para evitar divisão por zero e converter para float para os cálculos
+        # Usar um pequeno epsilon em vez de 1 pode ser mais seguro se 0 for um valor legítimo mas raro.
+        # No entanto, para tempo/velocidade histórica, 0 pode indicar dados ausentes ou inválidos.
+        # Se 0 significa "sem dados históricos", substituir por NaN e lidar com fillna(0) após o cálculo é melhor.
+        # Assumindo que 0 em historic_time/speed significa dado ausente ou inválido para comparação:
+        df['historic_time'] = df['historic_time'].replace(0, np.nan)
+        df['historic_speed'] = df['historic_speed'].replace(0, np.nan)
 
-        logging.info("Análise concluída com sucesso")
-        return df
+        # Garantir que as colunas são numéricas antes de calcular a variação
+        df['avg_time'] = pd.to_numeric(df['avg_time'], errors='coerce')
+        df['historic_time'] = pd.to_numeric(df['historic_time'], errors='coerce')
+        df['avg_speed'] = pd.to_numeric(df['avg_speed'], errors='coerce')
+        df['historic_speed'] = pd.to_numeric(df['historic_speed'], errors='coerce')
 
-    except Exception as e:
-        logging.error(f"Erro na análise de dados históricos vs atuais: {e}", exc_info=True)
-        st.error(f"Erro ao analisar dados históricos vs atuais: {e}")
-        return pd.DataFrame()
-    
-# Nova função para detalhes completos das conexões
+
+        # Cálculo seguro das variações, lidando com NaNs resultantes da substituição de 0s
+        # A divisão por zero resultará em Inf ou NaN, que o .fillna(0) trata.
+        df['var_time'] = ((df['avg_time'] - df['historic_time']) /
+                           df['historic_time']).replace([np.inf, -np.inf], np.nan).fillna(0) * 100
+        df['var_speed'] = ((df['avg_speed'] - df['historic_speed']) /
+                         df['historic_speed']).replace([np.inf, -np.inf], np.nan).fillna(0) * 100
+
+
+        # Classificação de status (mantida)
+        conditions = [
+            (df['var_time'] > 15) | (df['var_speed'] < -15),
+            (df['var_time'] > 5) | (df['var_speed'] < -5)
+        ]
+        choices = ['Crítico', 'Atenção']
+        df['status'] = np.select(conditions, choices, default='Normal')
+
+        logging.info("Análise de dados históricos vs atuais concluída com sucesso")
+        return df
+
+    except Exception as e:
+        logging.error(f"Erro na análise de dados históricos vs atuais: {e}", exc_info=True)
+        st.error(f"Erro ao analisar dados históricos vs atuais: {e}")
+        return pd.DataFrame()
+
+
+# Nova função para detalhes completos das conexões (Usa a conexão cacheada)
 def get_db_connections_details():
-    """
-    Lista todas as conexões ativas com detalhes
-    """
-    try:
-        conn = get_db_connection()
-        with conn.cursor(dictionary=True) as cursor:
-            cursor.execute("""
-                SELECT 
-                    id, user, host, db, command, time, state, info
-                FROM information_schema.processlist
-                WHERE db = %s
-            """, (st.secrets["mysql"]["database"],))
-            return cursor.fetchall()
-    except Exception as e:
-        logging.error(f"Erro ao listar conexões: {e}")
-        return []
+    """
+    Lista todas as conexões ativas para o banco de dados configurado.
+    Usa a conexão cacheada para a consulta, mas a consulta em si lista *todas* as conexões do banco.
+    """
+    logging.info("Iniciando get_db_connections_details.")
+    try:
+        conn = get_db_connection() # Obtém a conexão cacheada
+        if not conn or not conn.is_connected():
+            logging.error("Conexão não disponível para listar processos.")
+            st.warning("Não foi possível obter detalhes das conexões (conexão indisponível).")
+            return []
 
+        with conn.cursor(dictionary=True) as cursor:
+            logging.info(f"Executando query information_schema.processlist para o banco: {st.secrets['mysql']['database']}")
+            # Nota: Esta query pode precisar de permissões SHOW PROCESSLIST
+            cursor.execute("""
+                SELECT
+                    id, user, host, db, command, time, state, info
+                FROM information_schema.processlist
+                WHERE db = %s
+            """, (st.secrets["mysql"]["database"],))
+            results = cursor.fetchall()
+            logging.info(f"get_db_connections_details retornou {len(results)} processos.")
+            return results
+    except Exception as e:
+        logging.error(f"Erro ao listar conexões: {e}", exc_info=True)
+        st.error(f"Erro ao listar detalhes das conexões: {e}")
+        return []
 # --- Função Principal do Aplicativo Streamlit ---
 
 def main():
