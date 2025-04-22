@@ -26,6 +26,8 @@ from sklearn.metrics import mean_absolute_error
 import datetime # Importar datetime para manipular dates
 import holidays # Importar a biblioteca holidays para feriados
 import time # Importar time para manipulação de tempo
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 
 # Configurações de compatibilidade do numpy (manter se for necessário no seu ambiente)
@@ -244,8 +246,7 @@ st.markdown(custom_theme, unsafe_allow_html=True)
 # password = "@Ndre2025." # Mude isso para sua senha real ou use secrets
 # database = "u335174317_wazeportal"
 
-@st.cache_resource # Cache a conexão com o banco de dados para melhorar o desempenho
-@st.cache_resource
+@st.cache_resource # Cache a conexão com o banco de dados para melhorar o desempen
 def get_db_connection():
     """
     Estabelece e retorna uma conexão com o banco de dados MySQL.
