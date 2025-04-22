@@ -492,14 +492,23 @@ def process_metadata(df):
     return df.astype(conversions, errors='ignore').dropna()
 
 # Substitua a função get_db_stats() por esta versão corrigida
-# Interface de monitoramento
-def show_db_monitor():
-    with st.sidebar.expander("🔍 Monitor do Banco"):
-        stats = get_db_stats()
-        cols = st.columns(3)
-        cols[0].metric("Conexões Totais", stats.get('total_connections', 'N/A'))
-        cols[1].metric("Em Uso", stats.get('in_use', 'N/A'), delta_color="inverse")
-        cols[2].metric("Disponíveis", stats.get('available', 'N/A'))
+def get_db_stats():
+    """Retorna estatísticas seguras do pool de conexões"""
+    try:
+        pool = setup_database_pool()
+        
+        return {
+            "pool_size": pool._pool_size,  # Acesso ao tamanho configurado do pool
+            "active_connections": pool._configpool._active_connections  # Acesso interno (não recomendado)
+        }
+    except Exception as e:
+        logging.error(f"Erro ao obter estatísticas: {str(e)}")
+        return {
+            "pool_size": "N/A",
+            "active_connections": "N/A"
+        }
+    
+    
 
 # --- Funções de Processamento e Análise ---
 
@@ -1466,7 +1475,14 @@ def main():
     if not routes_info or all(info['data'].empty for info in routes_info.values()):
          st.info("Nenhuma análise exibida. Selecione rotas com dados disponíveis.")
     
-    show_db_monitor()
+    with st.sidebar.expander("🔍 Monitor do Banco"):
+        stats = get_db_stats()
+        st.metric("Conexões Disponíveis", stats["available_connections"])
+        st.metric("Conexões em Uso", stats["in_use"])
+        st.metric("Tamanho do Pool", stats["pool_size"])
+        
+        if st.button("Atualizar Status"):
+            st.rerun()
 
 # --- Executa o aplicativo Streamlit ---
 if __name__ == "__main__":
