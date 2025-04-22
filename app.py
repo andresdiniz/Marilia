@@ -307,6 +307,33 @@ def get_db_connection():
         st.error(f"Erro ao conectar ao banco: {e}")
         st.stop()
 
+def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Processa o dataframe após busca no banco de dados:
+    - Converte coluna de data
+    - Converte velocidade para numérico
+    - Remove registros inválidos
+    """
+    try:
+        if not df.empty:
+            # Converter coluna de data
+            df['data'] = pd.to_datetime(df['data'], errors='coerce', utc=True).dt.tz_localize(None)
+            
+            # Converter velocidade para numérico
+            df['velocidade'] = pd.to_numeric(df['velocidade'], errors='coerce')
+            
+            # Remover registros com dados inválidos
+            df = df.dropna(subset=['data', 'velocidade']).copy()
+            
+            # Ordenar por data
+            df.sort_values('data', inplace=True)
+            
+        return df
+    
+    except Exception as e:
+        logging.error(f"Erro no processamento do dataframe: {str(e)}")
+        return pd.DataFrame()
+
 # Funções de acesso ao banco otimizadas
 @st.cache_data(ttl=600, show_spinner="Buscando dados históricos...")
 def get_data(start_date=None, end_date=None, route_name=None):
